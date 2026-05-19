@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>x64</Platforms>
+    <RootNamespace>Infomatik.AutoCAD.Mcp</RootNamespace>
+    <AssemblyName>Infomatik.AutoCAD.Mcp</AssemblyName>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <AcadRefPath Condition=" '$(AcadRefPath)' == '' ">C:\Program Files\Autodesk\AutoCAD 2026</AcadRefPath>
+    <!--
+      AutoCAD's managed DLLs reference dozens of internal Autodesk assemblies that the SDK can't
+      resolve. We never need them at build time; the host process supplies them. Silence MSB3277
+      version-conflict noise and tell the resolver to stop walking transitive AutoCAD refs.
+    -->
+    <NoWarn>$(NoWarn);MSB3277</NoWarn>
+    <ResolveAssemblyReferenceIgnoreTargetFrameworkAttributeVersionMismatch>true</ResolveAssemblyReferenceIgnoreTargetFrameworkAttributeVersionMismatch>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="acmgd">
+      <HintPath>$(AcadRefPath)\acmgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="accoremgd">
+      <HintPath>$(AcadRefPath)\accoremgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="acdbmgd">
+      <HintPath>$(AcadRefPath)\acdbmgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
