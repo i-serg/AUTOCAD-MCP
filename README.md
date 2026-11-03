@@ -236,6 +236,27 @@ Restart Claude Code; `mcp__autocad__send_command`, `mcp__autocad__eval_lisp`,
 `mcp__autocad__list_documents` and `mcp__autocad__get_active_document` will appear in
 the tool list.
 
+## Wiring into Claude Desktop (stdio bridge)
+
+Claude Desktop starts local MCP servers as processes speaking JSON-RPC over stdio, so it
+can't use the HTTP endpoint directly. `tools/autocad-mcp-bridge.ps1` forwards stdio to the
+plugin using only the Windows PowerShell 5.1 that ships with Windows (no Node.js/Python).
+
+Add to `%APPDATA%\Claude\claude_desktop_config.json` under `"mcpServers"`
+(Settings → Developer → Edit Config), then restart Claude Desktop:
+
+```json
+"autocad": {
+  "command": "powershell.exe",
+  "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+           "C:\\path\\to\\autocad-mcp-bridge.ps1"]
+}
+```
+
+Start AutoCAD and `NETLOAD` the plugin before Claude Desktop, otherwise the server shows up
+as failed (the bridge answers with "AutoCAD is not reachable"). If the plugin uses a token,
+add `"env": { "INFOMATIK_ACAD_MCP_TOKEN": "<token>" }`.
+
 ## Notes & limitations
 
 - **Transport:** plain JSON-RPC over HTTP POST. No SSE / server-initiated messages, no
