@@ -1,12 +1,16 @@
 # AUTOCAD-MCP
 
 An in-process [Model Context Protocol](https://modelcontextprotocol.io) server for
-AutoCAD 2026. The .NET plugin is loaded into AutoCAD via `NETLOAD` and hosts a JSON-RPC
+AutoCAD 2021–2026. The .NET plugin is loaded into AutoCAD via `NETLOAD` and hosts a JSON-RPC
 endpoint on `http://localhost:7410/` that exposes AutoCAD's command line and AutoLISP
 runtime to any MCP client (Claude Code, Claude Desktop, ...).
 
-- **One 40 KB DLL**, no external dependencies — uses `System.Net.HttpListener` and
-  `System.Text.Json` from the .NET 8 BCL only. No ASP.NET Core shipped with the plugin.
+- **One DLL, no external dependencies** — built twice from the same sources:
+  - `net8.0-windows` for **AutoCAD 2025–2026** (uses `System.Text.Json` from the .NET 8 BCL);
+  - `net48` for **AutoCAD 2021–2024** (.NET Framework 4.8; a small built-in JSON implementation
+    replaces `System.Text.Json`, so no NuGet DLLs have to be shipped or can clash with
+    assemblies already loaded in AutoCAD).
+  Both use `System.Net.HttpListener`; no ASP.NET Core.
 - **Synchronous command execution** — `send_command` blocks until AutoCAD has actually
   drained the command queue, not just queued it.
 - **Drawing data readback via AutoLISP** — `eval_lisp` returns any LISP expression's value
@@ -31,6 +35,9 @@ AUTOCAD-MCP/
     ├── McpServer.cs
     ├── McpServerOptions.cs
     ├── McpHandler.cs
+    ├── Compat/
+    │   ├── MiniJson.cs       (net48 only: JsonNode/JsonObject/JsonArray/JsonValue subset)
+    │   └── Polyfills.cs      (APIs missing on .NET Framework, global JSON using)
     └── Tools/
         ├── AcadExecutor.cs
         └── CommandLineTools.cs
@@ -38,30 +45,42 @@ AUTOCAD-MCP/
 
 ## Build
 
-Requires the .NET 8 SDK and AutoCAD 2026 installed at the default path
-(`C:\Program Files\Autodesk\AutoCAD 2026`).
+Requires the .NET 8 SDK on Windows and the AutoCAD version(s) you build for, installed at
+the default path.
+
+| AutoCAD     | .NET runtime       | Target framework  | Output                                           |
+|-------------|--------------------|-------------------|--------------------------------------------------|
+| 2025 – 2026 | .NET 8             | `net8.0-windows`  | `src/bin/Release/net8.0-windows/Infomatik.AutoCAD.Mcp.dll` |
+| 2021 – 2024 | .NET Framework 4.8 | `net48`           | `src/bin/Release/net48/Infomatik.AutoCAD.Mcp.dll`          |
 
 ```powershell
+# AutoCAD 2022 (2021–2024 share one binary-compatible API generation, so it should load there too)
+dotnet build src/Infomatik.AutoCAD.Mcp.csproj -c Release -f net48
+
+# AutoCAD 2026 (also loads in 2025)
+dotnet build src/Infomatik.AutoCAD.Mcp.csproj -c Release -f net8.0-windows
+
+# both (needs both AutoCAD versions installed)
 dotnet build src/Infomatik.AutoCAD.Mcp.csproj -c Release
 ```
 
-Output: `src/bin/Release/Infomatik.AutoCAD.Mcp.dll` (~40 KB, no shipped dependencies).
-
 The project references `acmgd.dll`, `accoremgd.dll`, `acdbmgd.dll` from AutoCAD's
 install folder with `Private=false`, so those DLLs are **not** copied to the output —
-they come from the AutoCAD host process at runtime.
+they come from the AutoCAD host process at runtime. The `net48` build pulls the
+`Microsoft.NETFramework.ReferenceAssemblies` package at build time only; nothing is shipped.
 
-If AutoCAD is installed elsewhere:
+If AutoCAD is installed elsewhere, or you compile against another release of the same
+generation (e.g. AutoCAD 2024 for the `net48` build):
 ```powershell
-dotnet build src/Infomatik.AutoCAD.Mcp.csproj -c Release -p:AcadRefPath="<path>"
+dotnet build src/Infomatik.AutoCAD.Mcp.csproj -c Release -f net48 -p:AcadRefPath2022="C:\Program Files\Autodesk\AutoCAD 2024"
+dotnet build src/Infomatik.AutoCAD.Mcp.csproj -c Release -f net8.0-windows -p:AcadRefPath2026="<path>"
 ```
-
-You can also download a pre-built DLL from the [Releases](../../releases) page.
 
 ## Load into AutoCAD
 
-1. Start AutoCAD 2026 and open any drawing.
-2. At the command line: `NETLOAD` → pick `src/bin/Release/Infomatik.AutoCAD.Mcp.dll`.
+1. Start AutoCAD and open any drawing.
+2. At the command line: `NETLOAD` → pick the DLL matching your AutoCAD version
+   (`net48\` for 2021–2024, `net8.0-windows\` for 2025–2026).
 3. The command line prints:
    ```
    [Infomatik.AutoCAD.Mcp] MCP server listening at http://localhost:7410/
@@ -238,9 +257,10 @@ the tool list.
 - **Modal dialogs block the bridge.** While a dialog is open AutoCAD doesn't raise `Idle`, so
   calls wait until timeout. `suppressDialogs` (default on) avoids most of them; prefer `-`
   command variants (`-LAYER`, `-INSERT`, `-PLOT`).
-- **AutoCAD 2026 only.** The plugin targets the `.NETCoreApp,Version=v8.0` runtime that
-  ships with AutoCAD 2025+. It will not load into AutoCAD 2024 or earlier (which use
-  .NET Framework 4.8).
+- **AutoCAD versions.** Use the `net48` DLL for AutoCAD 2021–2024 and the `net8.0-windows`
+  DLL for 2025–2026; loading the wrong one fails at `NETLOAD`. The `eval_lisp` UTF-8 readback
+  relies on Unicode AutoLISP (`LISPSYS`), available since AutoCAD 2021; earlier versions are
+  not supported.
 
 ## License
 

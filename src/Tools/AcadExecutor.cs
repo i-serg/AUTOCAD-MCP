@@ -36,8 +36,11 @@ internal static class AcadExecutor
 
     static AcadExecutor()
     {
+#if NET
         // Needed for legacy ANSI code pages (e.g. 1251) when LISPSYS = 0.
+        // .NET Framework has all code pages built in.
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+#endif
     }
 
     public static async Task<CommandResult> ExecuteCommandAsync(
@@ -99,7 +102,8 @@ internal static class AcadExecutor
         {
             var doc = AcadApp.DocumentManager.MdiActiveDocument
                 ?? throw new InvalidOperationException("No active AutoCAD document.");
-            doc.SendStringToExecute(stream, activate, wrapUpInactiveDoc: false, echoCommand: echo);
+            // args: command, activate, wrapUpInactiveDoc, echoCommand
+            doc.SendStringToExecute(stream, activate, false, echo);
             return doc.Name;
         }, ct);
 

@@ -1,18 +1,27 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!--
+    One project, two builds:
+      net48           → AutoCAD 2021–2024 (.NET Framework 4.8), output bin\Release\net48\
+      net8.0-windows  → AutoCAD 2025–2026 (.NET 8),             output bin\Release\net8.0-windows\
+    Build only one of them with  -f net48  or  -f net8.0-windows.
+  -->
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFrameworks>net8.0-windows;net48</TargetFrameworks>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <PlatformTarget>x64</PlatformTarget>
     <Platforms>x64</Platforms>
     <RootNamespace>Infomatik.AutoCAD.Mcp</RootNamespace>
     <AssemblyName>Infomatik.AutoCAD.Mcp</AssemblyName>
-    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
-    <AcadRefPath Condition=" '$(AcadRefPath)' == '' ">C:\Program Files\Autodesk\AutoCAD 2026</AcadRefPath>
+
+    <!-- Install folders of the AutoCAD versions to compile against (override with -p:...). -->
+    <AcadRefPath2026 Condition=" '$(AcadRefPath2026)' == '' ">C:\Program Files\Autodesk\AutoCAD 2026</AcadRefPath2026>
+    <AcadRefPath2022 Condition=" '$(AcadRefPath2022)' == '' ">C:\Program Files\Autodesk\AutoCAD 2022</AcadRefPath2022>
     <!--
       AutoCAD's managed DLLs reference dozens of internal Autodesk assemblies that the SDK can't
       resolve. We never need them at build time; the host process supplies them. Silence MSB3277
@@ -24,19 +33,38 @@
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <!-- Backwards compatibility: -p:AcadRefPath=... still selects the AutoCAD 2026 folder. -->
+  <PropertyGroup Condition=" '$(AcadRefPath)' != '' ">
+    <AcadRefPath2026>$(AcadRefPath)</AcadRefPath2026>
+  </PropertyGroup>
+
+  <PropertyGroup Condition=" '$(TargetFramework)' == 'net48' ">
+    <AcadRef>$(AcadRefPath2022)</AcadRef>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(TargetFramework)' != 'net48' ">
+    <AcadRef>$(AcadRefPath2026)</AcadRef>
+  </PropertyGroup>
+
   <ItemGroup>
     <Reference Include="acmgd">
-      <HintPath>$(AcadRefPath)\acmgd.dll</HintPath>
+      <HintPath>$(AcadRef)\acmgd.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="accoremgd">
-      <HintPath>$(AcadRefPath)\accoremgd.dll</HintPath>
+      <HintPath>$(AcadRef)\accoremgd.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="acdbmgd">
-      <HintPath>$(AcadRefPath)\acdbmgd.dll</HintPath>
+      <HintPath>$(AcadRef)\acdbmgd.dll</HintPath>
       <Private>false</Private>
     </Reference>
+  </ItemGroup>
+
+  <!-- .NET Framework 4.8 build: everything it needs is in the GAC (System.Net.HttpListener
+       lives in System.dll). The reference-assemblies package is build-time only, so machines
+       without the 4.8 Developer Pack can still compile; nothing is shipped with the DLL. -->
+  <ItemGroup Condition=" '$(TargetFramework)' == 'net48' ">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
   </ItemGroup>
 
 </Project>

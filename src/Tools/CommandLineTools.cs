@@ -1,6 +1,4 @@
 using System;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Autodesk.AutoCAD.ApplicationServices;
@@ -203,10 +201,14 @@ internal sealed class CommandLineTools
             return a;
         }, ct).ConfigureAwait(false);
 
-        return TextResult(arr.ToJsonString(new JsonSerializerOptions
+#if NETFRAMEWORK
+        return TextResult(arr.ToJsonString()); // MiniJson keeps non-ASCII readable
+#else
+        return TextResult(arr.ToJsonString(new System.Text.Json.JsonSerializerOptions
         {
             Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         }));
+#endif
     }
 
     private static async Task<JsonObject> GetActiveDocumentAsync(CancellationToken ct)
@@ -260,7 +262,7 @@ internal sealed class CommandLineTools
             throw new ArgumentException("'timeoutSeconds' must be a number.");
 
         if (double.IsNaN(seconds)) seconds = 30.0;
-        seconds = Math.Clamp(seconds, 1.0, 600.0);
+        seconds = Compat.Clamp(seconds, 1.0, 600.0);
         return TimeSpan.FromSeconds(seconds);
     }
 

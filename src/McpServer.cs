@@ -1,9 +1,7 @@
 using System;
 using System.IO;
 using System.Net;
-using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -124,7 +122,7 @@ public sealed class McpServer : IDisposable
             ctx.Response.ContentType = "application/json; charset=utf-8";
             ctx.Response.ContentEncoding = Encoding.UTF8;
             ctx.Response.ContentLength64 = bytes.Length;
-            await ctx.Response.OutputStream.WriteAsync(bytes, ct).ConfigureAwait(false);
+            await ctx.Response.OutputStream.WriteAsync(bytes, 0, bytes.Length, ct).ConfigureAwait(false);
             ctx.Response.Close();
         }
         catch (Exception ex)
@@ -144,7 +142,7 @@ public sealed class McpServer : IDisposable
 
         var given = Encoding.UTF8.GetBytes(header.Substring(prefix.Length).Trim());
         var expected = Encoding.UTF8.GetBytes(_options.Token);
-        return CryptographicOperations.FixedTimeEquals(given, expected);
+        return Compat.FixedTimeEquals(given, expected);
     }
 
     /// <summary>Only pages served from the local machine may talk to us from a browser.</summary>
@@ -164,8 +162,9 @@ public sealed class McpServer : IDisposable
         var sb = new StringBuilder();
         var buffer = new char[8192];
         int n;
-        while ((n = await reader.ReadAsync(buffer.AsMemory(), ct).ConfigureAwait(false)) > 0)
+        while ((n = await reader.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
         {
+            ct.ThrowIfCancellationRequested();
             sb.Append(buffer, 0, n);
             if (sb.Length > maxChars) throw new InvalidDataException("Request body too large.");
         }
@@ -177,9 +176,9 @@ public sealed class McpServer : IDisposable
         ctx.Response.StatusCode = status;
         ctx.Response.ContentType = "application/json; charset=utf-8";
         if (origin is not null && IsAllowedOrigin(origin)) AddCors(ctx, origin);
-        var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { error = message }));
+        var bytes = Encoding.UTF8.GetBytes(new JsonObject { ["error"] = message }.ToJsonString());
         ctx.Response.ContentLength64 = bytes.Length;
-        await ctx.Response.OutputStream.WriteAsync(bytes).ConfigureAwait(false);
+        await ctx.Response.OutputStream.WriteAsync(bytes, 0, bytes.Length).ConfigureAwait(false);
         ctx.Response.Close();
     }
 
