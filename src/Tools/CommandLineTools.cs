@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,9 +21,12 @@ internal sealed class CommandLineTools
                     "Execute a command sequence on the active AutoCAD document's command line. " +
                     "Pass the input exactly as a user would type it. Use '\\n' for ENTER between arguments. " +
                     "Example: \"_LINE\\n0,0\\n100,100\\n\\n\" draws a line and exits the LINE command. " +
-                    "The call blocks until AutoCAD has finished processing the input. " +
-                    "For reading drawing data (system variables, entity properties, layers, ...), use `eval_lisp` instead — " +
-                    "it returns structured values, whereas send_command returns only an 'executed' status.",
+                    "Prefer underscore-prefixed (language-independent) command names, and '-' prefixed variants " +
+                    "(e.g. \"-LAYER\") to avoid dialogs. " +
+                    "The call blocks until AutoCAD has consumed all input. If the command is still waiting for input " +
+                    "afterwards, it is cancelled and an error is returned (set cancelIfIncomplete=false to keep it open " +
+                    "and continue it in the next call with cancelPending=false). " +
+                    "For reading drawing data (system variables, entity properties, layers, ...), use `eval_lisp` instead.",
                 ["inputSchema"] = new JsonObject
                 {
                     ["type"] = "object",
@@ -46,10 +50,28 @@ internal sealed class CommandLineTools
                             ["description"] = "Echo the input on the command line.",
                             ["default"] = true
                         },
+                        ["cancelPending"] = new JsonObject
+                        {
+                            ["type"] = "boolean",
+                            ["description"] = "Press ESC twice before sending, cancelling any command left open earlier.",
+                            ["default"] = true
+                        },
+                        ["cancelIfIncomplete"] = new JsonObject
+                        {
+                            ["type"] = "boolean",
+                            ["description"] = "If the command is still waiting for input after all input was consumed, cancel it and return an error.",
+                            ["default"] = true
+                        },
+                        ["suppressDialogs"] = new JsonObject
+                        {
+                            ["type"] = "boolean",
+                            ["description"] = "Temporarily set FILEDIA=0 and CMDDIA=0 so commands prompt on the command line instead of opening modal dialogs. Restored afterwards.",
+                            ["default"] = true
+                        },
                         ["timeoutSeconds"] = new JsonObject
                         {
                             ["type"] = "number",
-                            ["description"] = "Maximum time to wait for AutoCAD to finish. Default 30, max 600.",
+                            ["description"] = "Maximum time to wait for AutoCAD to finish. Default 30, max 600. On timeout the active command is cancelled.",
                             ["default"] = 30
                         }
                     }
@@ -60,13 +82,13 @@ internal sealed class CommandLineTools
                 ["name"] = "eval_lisp",
                 ["description"] =
                     "Evaluate an AutoLISP expression in the active document and return its value as a string. " +
-                    "This is the right tool for reading drawing data. Examples:\n" +
+                    "This is the right tool for reading drawing data. Non-ASCII text (e.g. Cyrillic) is returned correctly. Examples:\n" +
                     "  - \"(getvar \\\"DWGNAME\\\")\" → current filename\n" +
                     "  - \"(getvar \\\"CLAYER\\\")\" → current layer\n" +
                     "  - \"(entget (entlast))\" → DXF group codes of the most recent entity\n" +
                     "  - \"(vla-get-Count (vla-get-ModelSpace (vla-get-ActiveDocument (vlax-get-acad-object))))\" → model-space entity count\n" +
-                    "The expression runs inside vl-catch-all-apply, so LISP runtime errors return as \"ERROR: <message>\" " +
-                    "instead of breaking the command stream. Result is serialized with vl-prin1-to-string.",
+                    "The expression runs inside vl-catch-all-apply; LISP runtime errors are returned as a tool error " +
+                    "\"ERROR: <message>\". Result is serialized with vl-prin1-to-string.",
                 ["inputSchema"] = new JsonObject
                 {
                     ["type"] = "object",
@@ -76,7 +98,13 @@ internal sealed class CommandLineTools
                         ["expression"] = new JsonObject
                         {
                             ["type"] = "string",
-                            ["description"] = "A single AutoLISP form, e.g. \"(getvar \\\"DWGNAME\\\")\"."
+                            ["description"] = "AutoLISP form(s), e.g. \"(getvar \\\"DWGNAME\\\")\". Several forms are allowed; the value of the last one is returned."
+                        },
+                        ["cancelPending"] = new JsonObject
+                        {
+                            ["type"] = "boolean",
+                            ["description"] = "Press ESC twice first, cancelling any active command. Needed if the expression calls (command ...). Default false, so data can be read while a command is in progress.",
+                            ["default"] = false
                         },
                         ["timeoutSeconds"] = new JsonObject
                         {
@@ -128,27 +156,42 @@ internal sealed class CommandLineTools
 
     private static async Task<JsonObject> SendCommandAsync(JsonObject args, CancellationToken ct)
     {
-        var command = args["command"]?.GetValue<string>()
+        var command = GetString(args, "command")
             ?? throw new ArgumentException("send_command requires a 'command' string.");
-        var activate = args["activate"]?.GetValue<bool>() ?? false;
-        var echo = args["echo"]?.GetValue<bool>() ?? true;
-        var timeout = ParseTimeout(args);
 
-        var (docName, elapsed) = await AcadExecutor
-            .ExecuteCommandAsync(command, activate, echo, timeout, ct)
+        var r = await AcadExecutor.ExecuteCommandAsync(
+                command,
+                activate: GetBool(args, "activate", false),
+                echo: GetBool(args, "echo", true),
+                cancelPending: GetBool(args, "cancelPending", true),
+                suppressDialogs: GetBool(args, "suppressDialogs", true),
+                cancelIfIncomplete: GetBool(args, "cancelIfIncomplete", true),
+                ParseTimeout(args), ct)
             .ConfigureAwait(false);
 
-        return TextResult($"executed in '{docName}' ({elapsed.TotalSeconds:F2}s)");
+        if (r.StillActive && r.Cancelled)
+            return TextResult(
+                $"Input consumed in '{r.DocName}' ({r.Elapsed.TotalSeconds:F2}s), but the command was still waiting for " +
+                "more input and has been cancelled (ESC). Supply all prompts' answers and finish with an extra '\\n'.",
+                isError: true);
+
+        if (r.StillActive)
+            return TextResult(
+                $"Input consumed in '{r.DocName}' ({r.Elapsed.TotalSeconds:F2}s); the command is still active and waiting " +
+                "for input. Continue with send_command and cancelPending=false.");
+
+        return TextResult($"executed in '{r.DocName}' ({r.Elapsed.TotalSeconds:F2}s)");
     }
 
     private static async Task<JsonObject> EvalLispAsync(JsonObject args, CancellationToken ct)
     {
-        var expr = args["expression"]?.GetValue<string>()
+        var expr = GetString(args, "expression")
             ?? throw new ArgumentException("eval_lisp requires an 'expression' string.");
-        var timeout = ParseTimeout(args);
 
-        var result = await AcadExecutor.EvaluateLispAsync(expr, timeout, ct).ConfigureAwait(false);
-        return TextResult(result);
+        var r = await AcadExecutor
+            .EvaluateLispAsync(expr, GetBool(args, "cancelPending", false), ParseTimeout(args), ct)
+            .ConfigureAwait(false);
+        return TextResult(r.Value, r.IsError);
     }
 
     private static async Task<JsonObject> ListDocumentsAsync(CancellationToken ct)
@@ -160,7 +203,10 @@ internal sealed class CommandLineTools
             return a;
         }, ct).ConfigureAwait(false);
 
-        return TextResult(arr.ToJsonString());
+        return TextResult(arr.ToJsonString(new JsonSerializerOptions
+        {
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        }));
     }
 
     private static async Task<JsonObject> GetActiveDocumentAsync(CancellationToken ct)
@@ -172,18 +218,62 @@ internal sealed class CommandLineTools
         return TextResult(name);
     }
 
-    private static TimeSpan ParseTimeout(JsonObject args)
+    // ---- argument helpers: wrong types become -32602 (invalid params), not crashes ----
+
+    private static string? GetString(JsonObject args, string key)
     {
-        var seconds = args["timeoutSeconds"]?.GetValue<double>() ?? 30.0;
+        var node = args[key];
+        if (node is null) return null;
+        if (node is JsonValue v && v.TryGetValue<string>(out var s)) return s;
+        throw new ArgumentException($"'{key}' must be a string.");
+    }
+
+    private static bool GetBool(JsonObject args, string key, bool fallback)
+    {
+        var node = args[key];
+        if (node is null) return fallback;
+        if (node is JsonValue v)
+        {
+            if (v.TryGetValue<bool>(out var b)) return b;
+            if (v.TryGetValue<string>(out var s) && bool.TryParse(s, out b)) return b;
+        }
+        throw new ArgumentException($"'{key}' must be a boolean.");
+    }
+
+    internal static TimeSpan ParseTimeout(JsonObject args)
+    {
+        var node = args["timeoutSeconds"];
+        double seconds = 30.0;
+        if (node is JsonValue v)
+        {
+            if (!v.TryGetValue(out seconds))
+            {
+                if (v.TryGetValue<string>(out var s) && double.TryParse(s,
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+                    seconds = parsed;
+                else
+                    throw new ArgumentException("'timeoutSeconds' must be a number.");
+            }
+        }
+        else if (node is not null)
+            throw new ArgumentException("'timeoutSeconds' must be a number.");
+
+        if (double.IsNaN(seconds)) seconds = 30.0;
         seconds = Math.Clamp(seconds, 1.0, 600.0);
         return TimeSpan.FromSeconds(seconds);
     }
 
-    private static JsonObject TextResult(string text) => new()
+    private static JsonObject TextResult(string text, bool isError = false)
     {
-        ["content"] = new JsonArray
+        var o = new JsonObject
         {
-            new JsonObject { ["type"] = "text", ["text"] = text }
-        }
-    };
+            ["content"] = new JsonArray
+            {
+                new JsonObject { ["type"] = "text", ["text"] = text }
+            }
+        };
+        if (isError) o["isError"] = true;
+        return o;
+    }
 }

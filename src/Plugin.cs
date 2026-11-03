@@ -19,7 +19,8 @@ public sealed class Plugin : IExtensionApplication
             AcadDispatcher.Start();
             _server = new McpServer(McpServerOptions.FromEnvironment());
             _server.Start();
-            WriteLine($"[Infomatik.AutoCAD.Mcp] MCP server listening at {_server.Url}");
+            WriteLine($"[Infomatik.AutoCAD.Mcp] MCP server listening at {_server.Url}" +
+                      (_server.RequiresToken ? " (bearer token required)" : " (no token: set INFOMATIK_ACAD_MCP_TOKEN to require one)"));
         }
         catch (System.Exception ex)
         {
@@ -38,7 +39,7 @@ public sealed class Plugin : IExtensionApplication
     public void McpStatus()
     {
         WriteLine(_server is { IsRunning: true }
-            ? $"[Infomatik.AutoCAD.Mcp] running at {_server.Url}"
+            ? $"[Infomatik.AutoCAD.Mcp] running at {_server.Url}" + (_server.RequiresToken ? " (bearer token required)" : " (no token)")
             : "[Infomatik.AutoCAD.Mcp] not running");
     }
 

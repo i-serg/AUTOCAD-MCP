@@ -9,6 +9,7 @@ namespace Infomatik.AutoCAD.Mcp;
 internal sealed class McpHandler
 {
     private const string ProtocolVersion = "2025-06-18";
+    private static readonly string[] SupportedVersions = { "2025-06-18", "2025-03-26", "2024-11-05" };
     private readonly CommandLineTools _tools = new();
 
     public async Task<string?> HandleAsync(string body, CancellationToken ct)
@@ -95,8 +96,12 @@ internal sealed class McpHandler
 
     private static JsonObject Initialize(JsonNode? @params)
     {
-        var clientVersion = @params?["protocolVersion"]?.GetValue<string>();
-        var version = clientVersion ?? ProtocolVersion;
+        // Echo the client's version only if we support it; otherwise offer our latest
+        // and let the client decide whether to proceed (MCP version negotiation).
+        var clientVersion = (@params?["protocolVersion"] as JsonValue)?.TryGetValue<string>(out var cv) == true ? cv : null;
+        var version = clientVersion is not null && Array.IndexOf(SupportedVersions, clientVersion) >= 0
+            ? clientVersion
+            : ProtocolVersion;
         return new JsonObject
         {
             ["protocolVersion"] = version,
@@ -112,8 +117,11 @@ internal sealed class McpHandler
             },
             ["instructions"] =
                 "Exposes the AutoCAD 2026 command line of the host process. " +
-                "Use send_command to enter input exactly as a user would type it; terminate with \\n to commit ENTER. " +
-                "Example: \"_LINE\\n0,0\\n100,100\\n\\n\". Commands are queued asynchronously and return immediately."
+                "Use send_command to enter input exactly as a user would type it; use \\n for ENTER. " +
+                "Example: \"_LINE\\n0,0\\n100,100\\n\\n\". The call blocks until AutoCAD has consumed all input; " +
+                "a command left waiting for input is cancelled and reported as an error. " +
+                "Use eval_lisp to read drawing data (it returns structured values). " +
+                "Prefer _-prefixed command names and '-' variants (e.g. -LAYER) to avoid dialogs."
         };
     }
 
