@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AutoCAD Autoloader package: copy the whole InfomatikAutoCADMcp.bundle folder to
+    %APPDATA%\Autodesk\ApplicationPlugins\        (current user, trusted location)
+  or %PROGRAMDATA%\Autodesk\ApplicationPlugins\  (all users)
+  and put the built DLLs under Contents\net48\ and/or Contents\net8.0-windows\.
+  AutoCAD picks the component matching its release and loads it at startup.
+-->
+<ApplicationPackage SchemaVersion="1.0"
+                    AutodeskProduct="AutoCAD"
+                    ProductType="Application"
+                    Name="Infomatik AutoCAD MCP"
+                    Description="In-process MCP server exposing the AutoCAD command line and AutoLISP to MCP clients."
+                    AppVersion="1.0.0"
+                    Author="Infomatik"
+                    ProductCode="{98200972-BAA2-59E5-B57B-3928B8267027}"
+                    UpgradeCode="{BE0BFBEF-F7FD-55E1-9E2B-B6D182DE1F3D}">
+  <CompanyDetails Name="Infomatik" />
+
+  <!-- AutoCAD 2021-2024 (R24.x, .NET Framework 4.8) -->
+  <Components Description="AutoCAD 2021-2024">
+    <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R24.0" SeriesMax="R24.3" />
+    <ComponentEntry AppName="InfomatikAutoCADMcp"
+                    Version="1.0.0"
+                    ModuleName="./Contents/net48/Infomatik.AutoCAD.Mcp.dll"
+                    AppDescription="MCP server for AutoCAD (.NET Framework 4.8 build)"
+                    LoadOnAutoCADStartup="True" />
+  </Components>
+
+  <!-- AutoCAD 2025-2026 (R25.x, .NET 8) -->
+  <Components Description="AutoCAD 2025-2026">
+    <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R25.0" SeriesMax="R25.1" />
+    <ComponentEntry AppName="InfomatikAutoCADMcp"
+                    Version="1.0.0"
+                    ModuleName="./Contents/net8.0-windows/Infomatik.AutoCAD.Mcp.dll"
+                    AppDescription="MCP server for AutoCAD (.NET 8 build)"
+                    LoadOnAutoCADStartup="True" />
+  </Components>
+</ApplicationPackage>

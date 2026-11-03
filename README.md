@@ -76,6 +76,24 @@ dotnet build src/Infomatik.AutoCAD.Mcp.csproj -c Release -f net48 -p:AcadRefPath
 dotnet build src/Infomatik.AutoCAD.Mcp.csproj -c Release -f net8.0-windows -p:AcadRefPath2026="<path>"
 ```
 
+## Load automatically at AutoCAD startup
+
+Use AutoCAD's Autoloader: copy `tools/InfomatikAutoCADMcp.bundle` to
+`%APPDATA%\Autodesk\ApplicationPlugins\` (current user) or
+`%PROGRAMDATA%\Autodesk\ApplicationPlugins\` (all users) and put the DLL next to it:
+
+```
+InfomatikAutoCADMcp.bundle\
+├── PackageContents.xml
+└── Contents\
+    ├── net48\Infomatik.AutoCAD.Mcp.dll            (AutoCAD 2021–2024)
+    └── net8.0-windows\Infomatik.AutoCAD.Mcp.dll   (AutoCAD 2025–2026)
+```
+
+AutoCAD picks the component matching its release. `ApplicationPlugins` is a trusted
+location, so there is no "unsigned executable" prompt. Requires `APPAUTOLOAD` to include
+startup loading (the default, 14).
+
 ## Load into AutoCAD
 
 1. Start AutoCAD and open any drawing.
@@ -253,8 +271,9 @@ Add to `%APPDATA%\Claude\claude_desktop_config.json` under `"mcpServers"`
 }
 ```
 
-Start AutoCAD and `NETLOAD` the plugin before Claude Desktop, otherwise the server shows up
-as failed (the bridge answers with "AutoCAD is not reachable"). If the plugin uses a token,
+Claude Desktop may start before AutoCAD: while the plugin is unreachable the bridge answers
+`initialize` and `tools/list` itself, so the tools are listed anyway; tool calls return
+"AutoCAD is not reachable" until AutoCAD (with the plugin) is running. If the plugin uses a token,
 add `"env": { "INFOMATIK_ACAD_MCP_TOKEN": "<token>" }`.
 
 ## Notes & limitations
