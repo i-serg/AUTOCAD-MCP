@@ -115,7 +115,7 @@ internal sealed class McpHandler
                 ["version"] = typeof(McpHandler).Assembly.GetName().Version?.ToString() ?? "0.1.0"
             },
             ["instructions"] =
-                "Exposes the AutoCAD 2026 command line of the host process. " +
+                "Exposes the command line of the AutoCAD instance hosting this plugin. " +
                 "Use send_command to enter input exactly as a user would type it; use \\n for ENTER. " +
                 "Example: \"_LINE\\n0,0\\n100,100\\n\\n\". The call blocks until AutoCAD has consumed all input; " +
                 "a command left waiting for input is cancelled and reported as an error. " +
