@@ -106,7 +106,10 @@ public sealed class McpServer : IDisposable
 
             // ---- JSON-RPC ------------------------------------------------------------------
             string body;
-            using (var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8))
+            // JSON is always UTF-8 (RFC 8259). Don't trust req.ContentEncoding: without a charset
+            // in Content-Type, .NET Framework's HttpListener falls back to the ANSI code page
+            // (e.g. 1251), which turns Cyrillic in commands into mojibake.
+            using (var reader = new StreamReader(req.InputStream, new UTF8Encoding(false)))
                 body = await ReadLimitedAsync(reader, McpServerOptions.MaxRequestBytes, ct).ConfigureAwait(false);
 
             var response = await _handler.HandleAsync(body, ct).ConfigureAwait(false);
